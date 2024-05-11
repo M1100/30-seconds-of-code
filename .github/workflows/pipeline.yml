@@ -1,0 +1,91 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches: master
+  pull_request:
+    branches: master
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: install dependencies
+        run: npm i
+
+      - name: Test
+        run: jest
+
+  deploy-to-test-server:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: build
+        run: |
+          npm i
+          npm run build
+
+      - name: publish
+        run: |
+          aws s3 rm --recursive s3://30-seconds-test/
+          aws s3 cp ./dist s3://30-seconds-test/ --recursive
+
+  e2e-tests:
+    needs: deploy-to-test-server
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: install dependencies
+        run: npm i
+
+      - name: Test
+        run: npx cypress run
+
+  deploy-to-prod:
+    if: github.event_name == 'push'
+    needs: e2e-tests
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      ENV_NAME: ${{ needs.setvars.outputs.env_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: build
+        run: |
+          npm i
+          npm run build
+
+      - name: publish
+        run: |
+          aws s3 rm --recursive s3://30-seconds/
+          aws s3 cp ./dist s3://30-seconds/ --recursive
