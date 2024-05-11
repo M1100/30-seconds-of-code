@@ -21,7 +21,7 @@ jobs:
         run: npm i
 
       - name: Test
-        run: jest
+        run: npm run jest
 
   deploy-to-test-server:
     needs: unit-tests
